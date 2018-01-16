@@ -23,6 +23,7 @@
 *.user
 .deps
 .libs
+*.ilk
 Debug
 INSTALL
 Makefile
@@ -46,3 +47,7 @@ ltmain.sh
 missing
 sources
 stamp-h1
+
+.vs/
+libusb-win32/
+libusbK/

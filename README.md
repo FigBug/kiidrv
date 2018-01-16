@@ -1,3 +1,9 @@
+kiidrv: An automated driver installer
+=============================================================
+
+See the [kiidrv directory](kiidrv/)
+
+
 libwdi: A Windows Driver Installation library for USB devices
 =============================================================
 

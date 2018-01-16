@@ -42,7 +42,7 @@ struct emb {
 struct emb embeddable_fixed[] = {
 
 // WinUSB
-#if defined(DDK_DIR)
+#if defined(WINUSB_DIR)
 #	if defined(OPT_M32)
 		{ 0, DDK_DIR "\\redist\\wdf\\x86\\WdfCoInstaller0" STR(WDF_VER) ".dll", "x86" },
 		{ 0, DDK_DIR "\\redist\\" COINSTALLER_DIR "\\x86\\winusbcoinstaller2.dll", "x86" },
