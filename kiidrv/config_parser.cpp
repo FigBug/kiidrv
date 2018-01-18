@@ -63,7 +63,8 @@ struct wdi_device_info* parseConfigStr(char *json)
 		struct wdi_device_info *product = (struct wdi_device_info*)calloc(1, sizeof(struct wdi_device_info));
 		product->vid = parseId(vidObj->valuestring);
 		product->pid = parseId(pidObj->valuestring);
-		product->mi = interfaceObj ? interfaceObj->valueint : -1;
+		product->mi = interfaceObj ? interfaceObj->valueint : 0;
+		product->is_composite = interfaceObj != NULL;
 		product->desc = vendorObj ? vendorObj->valuestring : NULL;
 		product->driver = driverObj->valuestring;
 		product->next = NULL;
@@ -96,4 +97,17 @@ struct wdi_device_info* parseConfigFile(char *file)
 
 	fclose(f);
 	return parseConfigStr(data);
+}
+
+struct wdi_device_info* matchDevice(struct wdi_device_info *device, struct wdi_device_info *products)
+{
+	struct wdi_device_info *product;
+	for (product = products; product != NULL; product = product->next) {
+		if ((device->vid == product->vid) &&
+			(device->pid == product->pid) &&
+			(!device->is_composite || (device->mi == product->mi))) {
+			return product;
+		}
+	}
+	return NULL;
 }

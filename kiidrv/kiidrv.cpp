@@ -93,25 +93,12 @@ void listDevices(struct wdi_device_info **devices)
 	wdiAssert(rc);
 }
 
-struct wdi_device_info* matchDevice(struct wdi_device_info *device, struct wdi_device_info *first_product)
-{
-	struct wdi_device_info *product;
-	for (product = first_product; product != NULL; product = product->next) {
-		if ((device->vid == product->vid) &&
-			(device->pid == product->pid) &&
-			(device->mi  == product->mi || product->mi == -1)) {
-			return product;
-		}
-	}
-	return NULL;
-}
-
 void installDriver(struct wdi_device_info *device, int driver, char *vendor)
 {
 	VS_FIXEDFILEINFO driver_info;
 	if (!wdi_is_driver_supported(driver, &driver_info)) {
-		printf("Driver unsupported\n");
-		exit(3);
+		printf("Driver unsupported!\n");
+		return;
 	}
 	
 	static struct wdi_options_prepare_driver pd_options = { 0 };
@@ -170,13 +157,17 @@ bool verifyDevices(struct wdi_device_info *products)
 
 	bool invalid = 0;
 	struct wdi_device_info *device;
+	char device_s[256];
+
 	for (device = list; device != NULL; device = device->next) {
 		struct wdi_device_info *product = matchDevice(device, products);
 		if (product == NULL) continue;
 
 		int correct = device->driver && (_strcmpi(device->driver, product->driver) == 0);
-		printf("%s%c \t%04X:%04X %d\t%s\n", device->driver, correct ? ' ' : '*', device->vid, device->pid, device->mi, device->desc);
 		if (!correct) invalid++;
+		
+		deviceStr(device_s, sizeof(device_s), device);
+		printf("%s%c \t%s\n", device->driver, correct ? ' ' : '*', device_s);
 	}
 
 	if (invalid)
@@ -199,36 +190,62 @@ void fixDevices(struct wdi_device_info *products, int no_prompt)
 	int installed = 0;
 	int removed = 0;
 	struct wdi_device_info *device;
+	char device_s[256];
+
 	for (device = list; device != NULL; device = device->next) {
 		struct wdi_device_info *product = matchDevice(device, products);
 		if (product == NULL) continue;
 
 		int correct = device->driver && (_strcmpi(device->driver, product->driver) == 0);
-		if (!correct) {
-			printf("%04X:%04X %d\t%s has %s but should be %s\n", device->vid, device->pid, device->mi, device->desc, device->driver, product->driver);
+		if (correct) continue;
 
-			int driver = parseDriverStr(product->driver);
-			if (driver != -1 && confirm(" * Do you want to install the driver for this device (Y/n)? ", no_prompt))
+		deviceStr(device_s, sizeof(device_s), device);
+		printf("%s has %s but should be %s\n", device_s, device->driver, product->driver);
+
+		int currentDriver = parseDriverStr(device->driver);
+		int newDriver = parseDriverStr(product->driver);
+		if (newDriver != DRIVER_UNKNOWN)
+		{
+			// unknown -> {libusbK, libusb0, ...}
+			// misconfigured device, try to use libwdi to install the correct driver
+			if (confirm(" * Do you want to install the driver for this device (Y/n)? ", no_prompt))
 			{
 				printf("Installing %s driver... ", product->driver);
-				installDriver(device, driver, product->desc);
+				installDriver(device, newDriver, product->desc);
 				installed++;
 			}
-			else if (driver == -1 && confirm(" * Do you want to reset the driver for this device (Y/n)? ", no_prompt))
-			{
-				removeDriver(device);
-				removed++;
+			else {
+				printf("Skipping\n");
+			}
+		}
+		else
+		{
+			if (currentDriver != DRIVER_UNKNOWN) {
+				// {libusbK, libusb0, ...} -> unknown
+				// this tool was likely incorrectly used in the past, revert to the default driver hoping the 'unknown' one will be reinstalled
+				if (confirm(" * Do you want to reset the driver for this device (Y/n)? ", no_prompt))
+				{
+					removeDriver(device);
+					removed++;
+				}
+				else
+				{
+					printf("Skipping\n");
+				}
 			}
 			else
 			{
-				printf("Skipping...\n");
+				// unknown -> unknown
+				// user may have purposely installed another driver, don't not mess with it to be safe
+				printf("Situation not able to be automatically solved.\n");
 			}
-			printf("\n");
 		}
+
+		printf("\n");
 	}
 
 	if (!removed && !installed) {
-		printf("Nothing to do.\n");
+		printf("Nothing to do.\n\n");
 	}
 
 	if (removed)

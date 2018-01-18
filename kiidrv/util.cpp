@@ -21,6 +21,22 @@ int parseDriverStr(char *driverStr)
 		return WDI_LIBUSB0;
 	else if (_strcmpi(driverStr, "libusbK") == 0)
 		return WDI_LIBUSBK;
+	else if (_strcmpi(driverStr, "cdc") == 0)
+		return WDI_CDC;
+	else if (_strcmpi(driverStr, "user") == 0)
+		return WDI_USER;
 	else
-		return -1;
+		return DRIVER_UNKNOWN;
+}
+
+void deviceStr(char *dest, size_t size, struct wdi_device_info *device)
+{
+	if (device->is_composite)
+	{
+		sprintf_s(dest, size, "%04X:%04X-%d\t%s", device->vid, device->pid, device->mi, device->desc);
+	}
+	else
+	{
+		sprintf_s(dest, size, "%04X:%04X\t%s", device->vid, device->pid, device->desc);
+	}
 }
