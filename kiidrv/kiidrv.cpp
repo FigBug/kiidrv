@@ -77,23 +77,22 @@ void wdiAssert(int rc)
 	}
 }
 
-void listDevices(struct wdi_device_info **devices)
+int listDevices(struct wdi_device_info **devices)
 {
 	static struct wdi_options_create_list cl_options = { 0 };
 	cl_options.list_all = TRUE;
 	cl_options.trim_whitespaces = TRUE;
 
 	int rc = wdi_create_list(devices, &cl_options);
-	if (rc == WDI_ERROR_NO_DEVICE)
+	if (rc != WDI_ERROR_NO_DEVICE)
 	{
-		printf("No devices found. Double check your connection and try again.\n");
-		exit(rc);
+		wdiAssert(rc);
 	}
 	
-	wdiAssert(rc);
+	return rc;
 }
 
-void installDriver(struct wdi_device_info *device, int driver, char *vendor)
+void installDriver(struct wdi_device_info *device, int driver, char *vendor, bool wcid = false)
 {
 	VS_FIXEDFILEINFO driver_info;
 	if (!wdi_is_driver_supported(driver, &driver_info)) {
@@ -104,6 +103,7 @@ void installDriver(struct wdi_device_info *device, int driver, char *vendor)
 	static struct wdi_options_prepare_driver pd_options = { 0 };
 	pd_options.driver_type = driver;
 	pd_options.vendor_name = vendor ? vendor : DEFAULT_VENDOR;
+	pd_options.use_wcid_driver = wcid;
 	wdiAssert(wdi_prepare_driver(device, INF_PATH, INF_NAME, &pd_options));
 
 	static struct wdi_options_install_driver id_options = { 0 };
@@ -111,6 +111,15 @@ void installDriver(struct wdi_device_info *device, int driver, char *vendor)
 	id_options.pending_install_timeout = TIMEOUT_S * 1000;
 	wdiAssert(wdi_install_driver(device, INF_PATH, INF_NAME, NULL));
 	printf("Done!\n");
+}
+
+void installWcidDriver(int driver) {
+	unsigned short vid = 0x0000;
+	unsigned short pid = 0x0000;
+	bool is_composite = false;
+	char * desc = "Generic Device";
+	wdi_device_info generic_dev = { NULL, vid, pid, is_composite, 0, desc, NULL, NULL, NULL };
+	installDriver(&generic_dev, driver, DEFAULT_VENDOR, true);
 }
 
 void removeDriver(struct wdi_device_info *device)
@@ -150,10 +159,31 @@ bool confirm(char *msg, int no_prompt)
 	return (c != 'n') && (c != 'N');
 }
 
+void listDevices() {
+	struct wdi_device_info *list;
+	listDevices(&list);
+
+	struct wdi_device_info *device;
+	char device_s[256];
+
+	for (device = list; device != NULL; device = device->next) {
+		int currentDriver = parseDriverStr(device->driver);
+		if (currentDriver != DRIVER_UNKNOWN) {
+			deviceStr(device_s, sizeof(device_s), device);
+			printf("%s \t%s\n", device->driver, device_s);
+		}
+	}
+}
+
 bool verifyDevices(struct wdi_device_info *products)
 {
 	struct wdi_device_info *list;
-	listDevices(&list);
+	int rc = listDevices(&list);
+	if (rc == WDI_ERROR_NO_DEVICE)
+	{
+		printf("No devices found. Double check your connection and try again.\n");
+		exit(rc);
+	}
 
 	bool invalid = 0;
 	struct wdi_device_info *device;
@@ -182,10 +212,51 @@ bool verifyDevices(struct wdi_device_info *products)
 	return invalid == 0;
 }
 
-void fixDevices(struct wdi_device_info *products, int no_prompt)
+void purgeZadig(int no_prompt)
 {
 	struct wdi_device_info *list;
 	listDevices(&list);
+
+	int removed = 0;
+	struct wdi_device_info *device;
+	char device_s[256];
+
+	for (device = list; device != NULL; device = device->next) {
+		int currentDriver = parseDriverStr(device->driver);
+		if (currentDriver != DRIVER_UNKNOWN) {
+			deviceStr(device_s, sizeof(device_s), device);
+			printf("%s \t%s\n", device->driver, device_s);
+			if (confirm(" * Do you want to reset the driver for this device (y/n)? ", no_prompt))
+			{
+				removeDriver(device);
+				removed++;
+			}
+			printf("\n");
+		}
+	}
+
+	if (!removed) {
+		printf("Nothing to do.\n");
+	}
+
+	if (removed)
+	{
+		rescan();
+		printf("\n");
+	}
+
+	wdi_destroy_list(list);
+}
+
+void fixDevices(struct wdi_device_info *products, int no_prompt)
+{
+	struct wdi_device_info *list;
+	int rc = listDevices(&list);
+	if (rc == WDI_ERROR_NO_DEVICE)
+	{
+		printf("No devices found. Double check your connection and try again.\n");
+		exit(rc);
+	}
 
 	int installed = 0;
 	int removed = 0;
@@ -208,7 +279,7 @@ void fixDevices(struct wdi_device_info *products, int no_prompt)
 		{
 			// unknown -> {libusbK, libusb0, ...}
 			// misconfigured device, try to use libwdi to install the correct driver
-			if (confirm(" * Do you want to install the driver for this device (Y/n)? ", no_prompt))
+			if (confirm(" * Do you want to install the driver for this device (y/n)? ", no_prompt))
 			{
 				printf("Installing %s driver... ", product->driver);
 				installDriver(device, newDriver, product->desc);
@@ -223,7 +294,7 @@ void fixDevices(struct wdi_device_info *products, int no_prompt)
 			if (currentDriver != DRIVER_UNKNOWN) {
 				// {libusbK, libusb0, ...} -> unknown
 				// this tool was likely incorrectly used in the past, revert to the default driver hoping the 'unknown' one will be reinstalled
-				if (confirm(" * Do you want to reset the driver for this device (Y/n)? ", no_prompt))
+				if (confirm(" * Do you want to reset the driver for this device (y/n)? ", no_prompt))
 				{
 					removeDriver(device);
 					removed++;
@@ -257,30 +328,56 @@ void fixDevices(struct wdi_device_info *products, int no_prompt)
 	wdi_destroy_list(list);
 }
 
+void help(char *cmd) {
+	printf("Usage: %s command <options> \n", cmd);
+	printf("\n");
+	printf("Automated setup commands:\n");
+	printf("--config <FILE>    json file specifiying the correct drivers for devices\n");
+	printf("--install          installs drivers to the configured devices\n");
+	printf("--verify           verifies the correct drivers are installed for the configured devices\n");
+	printf("\n");
+	printf("Zadig commands:\n");
+	printf("--wcid <DRIVER>    installs a device agnostic driver (WinUSB, libusb0, or libusbK)\n");
+	printf("--list             lists all devices with zadig drivers\n");
+	printf("--purge            removes zadig drivers from all devices (WARNING: might cause issues)\n");
+	printf("\n");
+	printf("Options:\n");
+	printf("--no-confirm       do not prompt to install / uninstall drivers\n");
+	printf("--verbose          increases logging\n");
+	printf("--help             this message\n");
+}
+
 int main(int argc, char *argv[])
 {
 	int c = -1;
 	int option_index = 0;
-	static int verify = 0;
 	static int install = 0;
+	static int verify = 0;
+	static int list = 0;
+	static int purge = 0;
 	static int no_prompt = 0;
 	static int verbose = 0;
 	char *config = DEFAULT_CONFIG;
+
+	char *wcid_driver = NULL;
 
 	// Parse command-line options
 	while (1)
 	{
 		static struct option long_options[] = {
 			{"config", required_argument, 0, 'c'},
-			{"verify", no_argument, &verify, 'v'},
 			{"install", no_argument, &install, 'i'},
-			{"no-confirm", no_argument, &no_prompt, 'p'},
-			{"help", no_argument, 0, 'h'},
+			{"verify", no_argument, &verify, 'v'},
+			{"wcid", required_argument, 0, 'w'},
+			{"list", no_argument, &list, 'l'},
+			{"purge", no_argument, &purge, 'p'},
+			{"no-confirm", no_argument, &no_prompt, 'n'},
 			{"verbose", no_argument, &verbose, 'd'},
+			{"help", no_argument, 0, 'h'},
 			{0, 0, 0, 0}
 		};
 
-		c = getopt_long(argc, argv, ":clivhd", long_options, &option_index);
+		c = getopt_long(argc, argv, ":civlpndh", long_options, &option_index);
 		//  Detect the end of the options.
 		if (c == -1)
 			break;
@@ -301,36 +398,52 @@ int main(int argc, char *argv[])
 		case 'c':
 			config = optarg;
 			break;
+		case 'w':
+			wcid_driver = optarg;
+			break;
 		case 'h': // getopt_long already printed an error message.
 		default:
-			printf("--config  FILE     json file specifiying the correct drivers for devices\n");
-			printf("--verify           verifies the correct drivers are installed for the configured devices\n");
-			printf("--install          installs drivers to the configured devices\n");
-			printf("\n");
-			printf("Options:\n");
-			printf("--no-confirm       does not prompt to install\n");
-			printf("--verbose          increases logging\n");
-			printf("--help             this message\n");
+			help(argv[0]);
 			printf("\n");
 			return 1;
 		}
 	}
 
-	if (!verify && !install)
+	if (!list && !purge && !wcid_driver && !install && !verify)
 	{
-		printf("Please specify --verify or --install. See --help for more info.\n");
+		help(argv[0]);
 		return 1;
 	}
-
-	if (!config)
-	{
-		printf("Please specify --config <file>. See --help for more info.\n");
-		return 1;
-	}
-
-	struct wdi_device_info *products = parseConfigFile(config);
 
 	wdi_set_log_level(verbose ? LOG_LEVEL_VERBOSE : LOG_LEVEL_DEFAULT);
+
+	if (list)
+	{
+		listDevices();
+	}
+
+	if (purge)
+	{
+		purgeZadig(no_prompt);
+	}
+
+	if (wcid_driver) {
+		installWcidDriver(parseDriverStr(wcid_driver));
+	}
+
+	struct wdi_device_info *products = NULL;
+	if (install || verify)
+	{
+		if (config)
+		{
+			products = parseConfigFile(config);
+		}
+		else
+		{
+			printf("Please specify --config <file>. See --help for more info.\n");
+			return 1;
+		}
+	}
 
 	if (install)
 	{

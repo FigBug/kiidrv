@@ -84,7 +84,11 @@ struct wdi_device_info* parseConfigFile(char *file)
 {
 	FILE *f = NULL;
 	fopen_s(&f, file, "r");
-	_assert(f != NULL, "Could not open config");
+	if (!f)
+	{
+		printf("ERROR: Could not open config %s", file);
+		exit(1);
+	}
 
 	fseek(f, 0, SEEK_END);
 	int size = ftell(f);
