@@ -56,7 +56,7 @@ deploy:
   - provider: GitHub
     auth_token:
       secure: wjAvOOpKfKhMEDP/wXiAbGhXsk2XN6JJ0Ou/fotzTp8TUfmDb5afAHV8rD/Mlwn8
-    artifact: /.*\.exe/
+    artifact: /.*\.exe/, kiidrv/kiibohd.conf
     draft: true
     prerelease: false
     description: 'libwdi based libusbK automated driver installer'
