@@ -149,14 +149,14 @@ void rescan()
 
 bool confirm(char *msg, int no_prompt)
 {
-	if (no_prompt) {
-		return TRUE;
-	}
+if (no_prompt) {
+	return TRUE;
+}
 
-	printf(msg);
-	int c = (char)getchar();
-	while (getchar() != 0x0A); //FLUSH
-	return (c != 'n') && (c != 'N');
+printf(msg);
+int c = (char)getchar();
+while (getchar() != 0x0A); //FLUSH
+return (c != 'n') && (c != 'N');
 }
 
 void listDevices() {
@@ -195,7 +195,7 @@ bool verifyDevices(struct wdi_device_info *products)
 
 		int correct = device->driver && (_strcmpi(device->driver, product->driver) == 0);
 		if (!correct) invalid++;
-		
+
 		deviceStr(device_s, sizeof(device_s), device);
 		printf("%s%c \t%s\n", device->driver, correct ? ' ' : '*', device_s);
 	}
@@ -246,6 +246,55 @@ void purgeZadig(int no_prompt)
 	}
 
 	wdi_destroy_list(list);
+}
+
+void installDrivers(struct wdi_device_info *products, int no_prompt)
+{
+	struct wdi_device_info *list;
+	listDevices(&list);
+	
+	int installed = 0;
+	int removed = 0;
+	struct wdi_device_info *product, *device;
+	char device_s[256];
+
+	for (product = products; product != NULL; product = product->next) {
+		int newDriver = parseDriverStr(product->driver);
+		if (newDriver == DRIVER_UNKNOWN) continue;
+		
+		unsigned short vid = product->vid;
+		unsigned short pid = product->pid;
+		bool is_composite = product->is_composite;
+		char *desc = DEFAULT_VENDOR;
+		wdi_device_info generic_dev = { NULL, vid, pid, is_composite, 0, desc, NULL, NULL, NULL };
+
+		// Try to match against a plugged device to avoid device manager prompts
+		struct wdi_device_info *found_device = NULL;
+		for (wdi_device_info *device = list; device != NULL; device = device->next) {
+			if ((device->vid == product->vid) &&
+				(device->pid == product->pid) &&
+				(!device->is_composite || (device->mi == product->mi))) {
+					device = found_device;
+ 			}
+		}
+
+		if (found_device) {
+			int correct = found_device->driver && (_strcmpi(found_device->driver, product->driver) == 0);
+			if (correct) continue;
+
+			deviceStr(device_s, sizeof(device_s), found_device);
+			printf("Warning: %s driver already installed for %s, skipping. You may need to run fixup.", found_device->driver, device_s);
+		}
+		else {
+			device = &generic_dev;
+		}
+
+		deviceStr(device_s, sizeof(device_s), device);
+		printf("Installing %s for %s... ", product->driver, device_s);
+		installDriver(device, newDriver, product->desc);
+	}
+
+	printf("Done!\n");
 }
 
 void fixDevices(struct wdi_device_info *products, int no_prompt)
@@ -333,8 +382,10 @@ void help(char *cmd) {
 	printf("\n");
 	printf("Automated setup commands:\n");
 	printf("--config <FILE>    json file specifiying the correct drivers for devices\n");
-	printf("--install          installs drivers to the configured devices\n");
-	printf("--verify           verifies the correct drivers are installed for the configured devices\n");
+	printf("--install          installs all drivers in the config file (even for non-present devices)\n");
+	printf("--fixup            replaces drivers for connected devices with the correct ones\n");
+	printf("--verify           verifies the correct drivers are installed for the connected devices\n");
+	
 	printf("\n");
 	printf("Zadig commands:\n");
 	printf("--wcid <DRIVER>    installs a device agnostic driver (WinUSB, libusb0, or libusbK)\n");
@@ -352,6 +403,7 @@ int main(int argc, char *argv[])
 	int c = -1;
 	int option_index = 0;
 	static int install = 0;
+	static int fixup = 0;
 	static int verify = 0;
 	static int list = 0;
 	static int purge = 0;
@@ -367,6 +419,7 @@ int main(int argc, char *argv[])
 		static struct option long_options[] = {
 			{"config", required_argument, 0, 'c'},
 			{"install", no_argument, &install, 'i'},
+			{"fixup", no_argument, &fixup, 'f'},
 			{"verify", no_argument, &verify, 'v'},
 			{"wcid", required_argument, 0, 'w'},
 			{"list", no_argument, &list, 'l'},
@@ -409,7 +462,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (!list && !purge && !wcid_driver && !install && !verify)
+	if (!list && !purge && !wcid_driver && !install && !fixup && !verify)
 	{
 		help(argv[0]);
 		return 1;
@@ -432,7 +485,7 @@ int main(int argc, char *argv[])
 	}
 
 	struct wdi_device_info *products = NULL;
-	if (install || verify)
+	if (install || fixup || verify)
 	{
 		if (config)
 		{
@@ -447,7 +500,11 @@ int main(int argc, char *argv[])
 
 	if (install)
 	{
-		fixDevices(products, no_prompt);
+		installDrivers(products, no_prompt);
+	}
+	if (fixup)
+	{
+			fixDevices(products, no_prompt);
 	}
 	if (verify)
 	{

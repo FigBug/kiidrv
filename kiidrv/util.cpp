@@ -15,6 +15,9 @@ void _assert(int valid, char *msg)
 
 int parseDriverStr(char *driverStr)
 {
+	if (!driverStr)
+		return DRIVER_UNKNOWN;
+	
 	if (_strcmpi(driverStr, "winusb") == 0)
 		return WDI_WINUSB;
 	else if (_strcmpi(driverStr, "libusb0") == 0)
