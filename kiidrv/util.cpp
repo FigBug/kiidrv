@@ -4,12 +4,29 @@
 #include "libwdi.h"
 #include "util.h"
 
+FILE *output_file = NULL;
+
 void _assert(int valid, char *msg)
 {
 	if (!valid)
 	{
 		fprintf(stderr, "Error: %s\n", msg);
 		exit(1);
+	}
+}
+
+void _printf(const char *format, ...)
+{
+	char buff[255];
+
+	va_list args;
+	va_start(args, format);
+	snprintf(buff, 255, format, args);
+	va_end(args);
+
+	fputs(buff, stdout);
+	if (output_file) {
+		fputs(buff, output_file);
 	}
 }
 
@@ -36,10 +53,10 @@ void deviceStr(char *dest, size_t size, struct wdi_device_info *device)
 {
 	if (device->is_composite)
 	{
-		sprintf_s(dest, size, "%04X:%04X-%d\t%s", device->vid, device->pid, device->mi, device->desc);
+		snprintf(dest, size, "%04X:%04X-%d\t%s", device->vid, device->pid, device->mi, device->desc);
 	}
 	else
 	{
-		sprintf_s(dest, size, "%04X:%04X\t%s", device->vid, device->pid, device->desc);
+		snprintf(dest, size, "%04X:%04X\t%s", device->vid, device->pid, device->desc);
 	}
 }

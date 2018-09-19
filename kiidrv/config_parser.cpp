@@ -10,10 +10,10 @@ void jsonAssert(int valid)
 		const char *error_ptr = cJSON_GetErrorPtr();
 		if (error_ptr != NULL)
 		{
-			fprintf(stderr, "Error parsing JSON: %s\n", error_ptr);
+			_printf("Error parsing JSON: %s\n", error_ptr);
 		}
 		else {
-			printf("Error parsing JSON\n");
+			_printf("Error parsing JSON\n");
 		}
 		exit(2);
 	}
@@ -24,7 +24,7 @@ int parseId(char *str)
 	errno = 0;
 	int val = strtol(str, NULL, 0);
 	if (!val || errno) {
-		printf("Invalid id: '%s'\n", str);
+		_printf("Invalid id: '%s'\n", str);
 		exit(errno);
 	}
 	return val;
@@ -86,7 +86,7 @@ struct wdi_device_info* parseConfigFile(char *file)
 	fopen_s(&f, file, "r");
 	if (!f)
 	{
-		printf("ERROR: Could not open config %s", file);
+		_printf("ERROR: Could not open config %s", file);
 		exit(1);
 	}
 
