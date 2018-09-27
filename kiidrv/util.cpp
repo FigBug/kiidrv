@@ -21,7 +21,7 @@ void _printf(const char *format, ...)
 
 	va_list args;
 	va_start(args, format);
-	snprintf(buff, 255, format, args);
+	vsnprintf(buff, 255, format, args);
 	va_end(args);
 
 	fputs(buff, stdout);
